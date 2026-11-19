@@ -6,7 +6,7 @@ A full-stack CloudOps support application that combines ticket handling, an inte
 
 ## Interface
 
-See the [screenshot gallery](docs/ui-screenshots/README.md) for the sign-in page, support workspace, and administration views. The gallery identifies which screens use demonstration data.
+See the [screenshot gallery](ui/screenshots/README.md) for the sign-in page, support workspace, and administration views. The gallery identifies which screens use demonstration data.
 
 ## Problem and Motivation
 
