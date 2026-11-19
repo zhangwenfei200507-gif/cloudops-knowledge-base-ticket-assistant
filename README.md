@@ -4,6 +4,10 @@
 
 A full-stack CloudOps support application that combines ticket handling, an internal knowledge base, document-backed answers and optional LLM synthesis. It is a personal software project and is not presented as commercial production software.
 
+## Interface
+
+See the [screenshot gallery](ui/screenshots/README.md) for the sign-in page, support workspace, and administration views. The gallery identifies which screens use demonstration data.
+
 ## Problem and Motivation
 
 Support teams need answers grounded in internal runbooks and a clear route to human help when the available evidence is insufficient. This application models that loop with searchable documents, source references, feedback and ticket creation.
@@ -86,11 +90,10 @@ Build the frontend from `ai-support-web` with `npm ci` followed by `npm run buil
 
 - No vector embeddings or reranker; lexical retrieval may miss semantically related wording.
 - Provider-backed flows require secrets and were not verified end to end. SQL scripts are present, but this audit did not establish a fresh production migration/bootstrap path.
-- The real UI has not yet been captured in a configured environment; no mockup is used as feature evidence.
+- The screenshot gallery covers the frontend in an isolated preview. Provider integration and database behavior require their own configured environment.
 
 ## Roadmap
 
-- Add a sanitized, authentic screenshot set from a configured isolated environment.
 - Document one clean database bootstrap path and the exact environment variables.
 - Add browser-level workflow verification for sign-in, knowledge search, answer citations and ticket escalation.
 - Revisit retrieval evaluation and describe measured behavior only when a reproducible evaluation set exists.

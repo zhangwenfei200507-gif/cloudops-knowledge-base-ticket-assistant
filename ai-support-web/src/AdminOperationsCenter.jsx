@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertTriangle,
+  ArrowRight,
   Bell,
   BookOpen,
   Bot,
@@ -35,6 +37,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import AdminUserManagement from './components/AdminUserManagement';
+import { CloudOpsMark } from './SignIn';
 import {
   approveDocumentKnowledgeCandidate,
   approveKnowledgeStewardTask,
@@ -171,7 +174,7 @@ const categoryIconMap = {
 };
 
 const pageHeadings = {
-  command: ['Dashboard', 'System overview and key operational metrics'],
+  command: ['Operations overview', 'Triage support requests and review the knowledge your assistant uses.'],
   assistant: ['AI Assistant', 'Search your knowledge, investigate issues, and get grounded answers'],
   knowledge: ['Knowledge Library', 'Maintain reviewed, durable knowledge packs'],
   knowledgePackDetail: ['Knowledge Pack', 'Read and maintain one published knowledge pack'],
@@ -182,11 +185,34 @@ const pageHeadings = {
   webEvidence: ['Web Evidence', 'Review external evidence before it becomes internal knowledge'],
   ai: ['AI Activity', 'Inspect real AI usage, grounding, and answer quality'],
   gaps: ['Knowledge Gaps', 'Find and resolve unanswered or low-confidence questions'],
-  tickets: ['Tickets', 'Manage support requests and escalations'],
+  tickets: ['Support tickets', 'Manage support requests and escalations'],
   users: ['User Management', 'Manage registered users, roles, and account access'],
   settings: ['Settings', 'Inspect system configuration and service readiness'],
 };
 
+const adminNavigation = [
+  { label: 'Operations', items: [
+    { id: 'command', label: 'Overview', path: '/admin', icon: Home },
+    { id: 'tickets', label: 'Support tickets', path: '/admin/tickets', icon: Ticket },
+    { id: 'assistant', label: 'AI assistant', path: '/admin/assistant', icon: Bot },
+    { id: 'ai', label: 'AI activity', path: '/admin/ai-activity', icon: Activity },
+  ] },
+  { label: 'Knowledge', items: [
+    { id: 'knowledge', label: 'Knowledge library', path: '/admin/knowledge', icon: BookOpen },
+    { id: 'documents', label: 'Source library', path: '/admin/sources', icon: FileText },
+    { id: 'documentLearning', label: 'Knowledge review', path: '/admin/review', icon: Target },
+    { id: 'webEvidence', label: 'Web evidence', path: '/admin/web-evidence', icon: Globe2 },
+    { id: 'gaps', label: 'Knowledge gaps', path: '/admin/gaps', icon: AlertTriangle },
+  ] },
+  { label: 'Administration', items: [
+    { id: 'users', label: 'Users and access', path: '/admin/users', icon: UsersRound },
+    { id: 'settings', label: 'Settings', path: '/admin/settings', icon: Settings },
+  ] },
+];
+const adminPages = adminNavigation.flatMap((group) => group.items);
+const sectionParent = {
+  knowledgePackDetail: 'knowledge', articleDetail: 'knowledge', documentDetail: 'documents',
+};
 const LIBRARY_PAGE_SIZE = 8;
 const REVIEW_PAGE_SIZE = 6;
 const normalizeAdminPath = (path = window.location.pathname) => {
@@ -205,25 +231,11 @@ const parseAdminRoute = (path = window.location.pathname) => {
   if (documentChunksMatch) return { page: 'documentDetail', id: Number(documentChunksMatch[1]), tab: 'chunks' };
   if (documentMatch) return { page: 'documentDetail', id: Number(documentMatch[1]), tab: 'overview' };
 
-  const pages = [
-    ['/admin', 'command'],
-    ['/admin/assistant', 'assistant'],
-    ['/admin/knowledge', 'knowledge'],
-    ['/admin/sources', 'documents'],
-    ['/admin/review', 'documentLearning'],
-    ['/admin/web-evidence', 'webEvidence'],
-    ['/admin/ai-activity', 'ai'],
-    ['/admin/gaps', 'gaps'],
-    ['/admin/tickets', 'tickets'],
-    ['/admin/users', 'users'],
-    ['/admin/settings', 'settings'],
-  ];
   return {
-    page: pages.find(([prefix]) => normalized === prefix
-      || (prefix !== '/admin' && normalized.startsWith(`${prefix}/`)))?.[1] || 'command',
+    page: adminPages.find(({ path: prefix }) => normalized === prefix
+      || (prefix !== '/admin' && normalized.startsWith(`${prefix}/`)))?.id || 'command',
   };
 };
-
 const pageItems = (pageResult) => pageResult?.items ?? [];
 const pageInfo = (pageResult, fallbackSize) => ({
   page: pageResult?.page ?? 1,
@@ -893,6 +905,7 @@ function AdminOperationsCenter() {
   const [adminRoute, setAdminRoute] = useState(() => parseAdminRoute());
   const [data, setData] = useState(fallbackData);
   const [loadState, setLoadState] = useState('loading');
+  const [overviewActivity, setOverviewActivity] = useState({ status: 'loading', logs: [] });
   const [activeModal, setActiveModal] = useState(null);
   const [actionStatus, setActionStatus] = useState({ type: '', text: '' });
   const [articleForm, setArticleForm] = useState({ title: '', category: 'General', file: null });
@@ -987,8 +1000,6 @@ function AdminOperationsCenter() {
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [knowledgeNavOpen, setKnowledgeNavOpen] = useState(true);
-  const [settingsNavOpen, setSettingsNavOpen] = useState(true);
   const [assistantFullscreen, setAssistantFullscreen] = useState(false);
   const user = useMemo(() => {
     try {
@@ -1048,6 +1059,19 @@ function AdminOperationsCenter() {
       });
   }, []);
 
+  const loadOverviewActivity = useCallback(() => {
+    setOverviewActivity({ status: 'loading', logs: [] });
+    getAiQuestionLogs({ page: 1, size: 4 })
+      .then((result) => {
+        if (!Array.isArray(result?.items)) throw new Error('Activity response did not contain records.');
+        setOverviewActivity({ status: 'ready', logs: result.items });
+      })
+      .catch(() => setOverviewActivity({ status: 'error', logs: [] }));
+  }, []);
+
+  useEffect(() => {
+    if (activePage === 'command') loadOverviewActivity();
+  }, [activePage, loadOverviewActivity]);
   const pagedArticles = articles;
   const pagedDocuments = documents;
   const pagedAdminChunks = adminChunks;
@@ -1568,43 +1592,12 @@ function AdminOperationsCenter() {
     setActionStatus({ type: '', text: '' });
   };
 
-  const handleNavAction = (label) => {
-    const actions = {
-      command: () => {
-        navigateAdmin('/admin');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      },
-      assistant: async () => {
-        navigateAdmin('/admin/assistant');
-      },
-      knowledge: async () => {
-        navigateAdmin('/admin/knowledge');
-      },
-      documents: async () => {
-        navigateAdmin('/admin/sources');
-      },
-      documentLearning: async () => {
-        navigateAdmin('/admin/review');
-      },
-      webEvidence: async () => {
-        navigateAdmin('/admin/web-evidence');
-      },
-      ai: async () => {
-        navigateAdmin('/admin/ai-activity');
-      },
-      gaps: async () => {
-        navigateAdmin('/admin/gaps');
-      },
-      tickets: async () => {
-        navigateAdmin('/admin/tickets');
-      },
-      users: () => navigateAdmin('/admin/users'),
-      settings: () => navigateAdmin('/admin/settings'),
-    };
+  const handleNavAction = (id) => {
+    const destination = adminPages.find((page) => page.id === id);
+    if (!destination) return;
     setMobileSidebarOpen(false);
-    actions[label]?.();
+    navigateAdmin(destination.path);
   };
-
   const openGlobalSearch = () => {
     setGlobalSearchResults({ articles: [], chunks: [] });
     setActionStatus({ type: '', text: '' });
@@ -1629,37 +1622,6 @@ function AdminOperationsCenter() {
     window.addEventListener('keydown', handleGlobalShortcut);
     return () => window.removeEventListener('keydown', handleGlobalShortcut);
   }, []);
-
-  const handleMetricClick = (metricKey) => {
-    const actions = {
-      totalKnowledgeArticles: async () => {
-        navigateAdmin('/admin/knowledge');
-        await loadArticles();
-      },
-      runbookDocuments: async () => {
-        navigateAdmin('/admin/sources');
-        await loadDocuments();
-      },
-      knowledgeCoverage: () => openModal('coverageDetail'),
-      questionsAnswered7d: async () => {
-        navigateAdmin('/admin/ai-activity');
-        await loadAiLogs();
-      },
-      pendingReviews: async () => {
-        navigateAdmin('/admin/review');
-        await loadDocumentCandidates(1);
-      },
-      avgAnswerConfidence: async () => {
-        navigateAdmin('/admin/ai-activity');
-        await loadAiLogs();
-      },
-      openTickets: async () => {
-        navigateAdmin('/admin/tickets');
-        await loadTickets();
-      },
-    };
-    actions[metricKey]?.();
-  };
 
   const openWebEvidencePage = async () => {
     navigateAdmin('/admin/web-evidence');
@@ -2230,86 +2192,89 @@ Prevention controls:
     }
   };
 
-  const renderCommandCenterPage = () => (
-    <>
-      <section className="metricsGrid dashboardMetrics">
-        {[
-          ...(data.metrics ?? []).filter((metric) => ['totalKnowledgeArticles', 'questionsAnswered7d', 'openTickets'].includes(metric.key)),
-          { key: 'pendingReviews', label: 'Pending Reviews', value: documentCandidates.filter((candidate) => candidate.status === 'NEEDS_REVIEW').length + numberValue(data.externalEvidence?.summary?.pendingReview), detail: 'File and web evidence queue', icon: 'target', trend: '', trendType: 'neutral' },
-        ].sort((left, right) => ['totalKnowledgeArticles', 'questionsAnswered7d', 'pendingReviews', 'openTickets'].indexOf(left.key) - ['totalKnowledgeArticles', 'questionsAnswered7d', 'pendingReviews', 'openTickets'].indexOf(right.key)).map((metric) => <MetricCard metric={metric} key={metric.key} onClick={() => handleMetricClick(metric.key)} />)}
-      </section>
-
-      <section className="dashboardAskPanel">
-        <div className="dashboardAskCopy">
-          <span className="panelKicker">AI ASSISTANT</span>
-          <h2>Ask Aegis AI</h2>
-          <p>Get grounded answers from internal knowledge, uploaded documents, and trusted web sources.</p>
-          <div className="aiRouteChips"><span>Internal Knowledge</span><span>Web Search</span><span>AI Analysis</span></div>
-        </div>
-        <form className="dashboardAskForm" onSubmit={submitAiQuestion}>
-          <textarea value={questionForm.question} rows={3} placeholder="Type your question here..." aria-label="Ask Aegis AI" onChange={(event) => setQuestionForm((current) => ({ ...current, question: event.target.value }))} />
-          <div className="dashboardAskActions">
-            <label className="attachAction"><Upload size={15} />Attach file<input type="file" accept=".txt,.md,.pdf,.docx" onChange={(event) => setQuestionForm((current) => ({ ...current, file: event.target.files?.[0] ?? null }))} /></label>
-            <button type="button" onClick={openGlobalSearch}><Search size={15} />Search knowledge</button>
-            <button type="button" onClick={openWebEvidencePage}><Globe2 size={15} />Use web search</button>
-            <button className="primaryAction" type="submit">Send <ChevronDown size={15} /></button>
-          </div>
-          {actionStatus.text && activePage === 'command' && <div className={`adminActionStatus ${actionStatus.type}`}>{actionStatus.text}</div>}
-          {questionAnswer && <div className={`dashboardAnswerPreview ${!hasUsableAnswer(questionAnswer) ? 'answerUnavailable' : ''}`}><strong>{answerRouteLabel(questionAnswer)} · {answerEngineLabel(questionAnswer)}</strong><KnowledgeContentBlock content={questionAnswer.answer || 'No reliable answer was generated.'} /><button type="button" onClick={() => { setActivePage('assistant'); setSelectedAiLog(questionAnswer); setAssistantQuestion(questionAnswer.question || ''); }}>Open in AI Assistant</button></div>}
-        </form>
-      </section>
-
-      <section className="dashboardOperationsGrid">
-        <article className="insightPanel">
-          <div className="insightHeader">
-            <span>Knowledge Overview</span>
-            <button type="button" onClick={() => openModal('coverageDetail')}>Details</button>
-          </div>
-          <div className="overviewMetrics"><div><strong>{formatCount(data.metrics?.find((metric) => metric.key === 'totalKnowledgeArticles')?.value)}</strong><span>Articles</span></div><div><strong>{formatCount(data.metrics?.find((metric) => metric.key === 'runbookDocuments')?.value)}</strong><span>Documents</span></div><div><strong>{data.metrics?.find((metric) => metric.key === 'knowledgeCoverage')?.value ?? '—'}</strong><span>Coverage</span></div></div>
-          <div className="miniCoverageList">
-            {(data.knowledgeCore?.categories ?? []).slice(0, 5).map((category) => (
-              <div key={category.category}>
-                <p><strong>{category.category}</strong><b>{category.coveragePercent ?? 0}%</b></p>
-                <i><em style={{ width: `${category.coveragePercent ?? 0}%` }} /></i>
+  const renderCommandCenterPage = () => {
+    const metricByKey = new Map((data.metrics ?? []).map((metric) => [metric.key, metric]));
+    const recentTickets = (data.ticketEscalation?.tickets ?? []).slice(0, 3);
+    const recentGaps = (data.knowledgeGapLoop?.gaps ?? []).slice(0, 3);
+    const pendingEvidence = data.externalEvidence?.summary?.pendingReview;
+    const services = data.serviceHealth ?? [];
+    const stats = [
+      { key: 'openTickets', label: 'Open tickets', page: 'tickets', icon: Ticket },
+      { key: 'pendingReview', label: 'Web evidence to review', page: 'webEvidence', icon: Globe2, value: pendingEvidence },
+      { key: 'totalKnowledgeArticles', label: 'Published knowledge packs', page: 'knowledge', icon: BookOpen },
+      { key: 'questionsAnswered7d', label: 'Answered questions in 7 days', page: 'ai', icon: CircleHelp },
+    ];
+    return (
+      <>
+        <section className="opsStats" aria-label="Operations metrics">
+          {stats.map(({ key, label, value, page, icon: Icon }) => (
+            <button type="button" key={key} onClick={() => handleNavAction(page)}>
+              <span className="opsStatIcon"><Icon size={19} aria-hidden="true" /></span>
+              <span><strong>{value ?? metricByKey.get(key)?.value ?? '—'}</strong><small>{label}</small></span>
+              <ArrowRight size={16} aria-hidden="true" />
+            </button>
+          ))}
+        </section>
+        <div className="opsOverviewGrid">
+          <section className="opsPanel" aria-labelledby="ops-tickets-title">
+            <header><div><h2 id="ops-tickets-title">Ticket queue</h2><p>Recent open support requests</p></div><button type="button" onClick={() => handleNavAction('tickets')}>All tickets <ArrowRight size={15} aria-hidden="true" /></button></header>
+            {recentTickets.length ? <ul className="opsQueue">
+              {recentTickets.map((ticket) => (
+                <li key={ticket.ticketId}><button type="button" onClick={() => openTicketDetail(ticket)}>
+                  <span className={`opsPriority ${String(ticket.priority || '').toLowerCase()}`}>{statusText(ticket.priority)}</span>
+                  <span><strong>{ticket.title}</strong><small>{ticket.owner || 'Unassigned'}{ticket.createdAgo && ` · ${ticket.createdAgo}`}</small></span>
+                  <ArrowRight size={15} aria-hidden="true" />
+                </button></li>
+              ))}
+            </ul> : <EmptyState text="No open tickets reported." />}
+          </section>
+          <section className="opsPanel" aria-labelledby="ops-review-title">
+            <header><div><h2 id="ops-review-title">Knowledge review</h2><p>Resolve gaps and validate incoming sources</p></div><button type="button" onClick={() => handleNavAction('documentLearning')}>Review candidates <ArrowRight size={15} aria-hidden="true" /></button></header>
+            <ul className="opsQueue">
+              <li><button type="button" onClick={() => handleNavAction('webEvidence')}>
+                <span className="opsQueueIcon"><Globe2 size={17} aria-hidden="true" /></span><span><strong>External evidence</strong><small>{pendingEvidence == null ? 'Review count unavailable' : `${pendingEvidence} pending review`}</small></span><ArrowRight size={15} aria-hidden="true" />
+              </button></li>
+              {recentGaps.map((gap) => (
+                <li key={gap.logId}><button type="button" onClick={() => handleNavAction('gaps')}>
+                  <span className="opsQueueIcon"><AlertTriangle size={17} aria-hidden="true" /></span><span><strong>{gap.question}</strong><small>{gap.category || 'Knowledge gap'}</small></span><ArrowRight size={15} aria-hidden="true" />
+                </button></li>
+              ))}
+              {!recentGaps.length && <li><EmptyState text="No recent knowledge gaps reported." /></li>}
+            </ul>
+          </section>
+          <section className="opsPanel" aria-labelledby="ops-coverage-title">
+            <header><div><h2 id="ops-coverage-title">Knowledge coverage</h2><p>Coverage across core CloudOps domains</p></div><button type="button" onClick={() => openModal('coverageDetail')}>View details <ArrowRight size={15} aria-hidden="true" /></button></header>
+            <div className="opsCoverage">
+              <div><strong>{metricByKey.get('knowledgeCoverage')?.value ?? '—'}</strong><span>Overall coverage</span></div>
+              <div className="miniCoverageList">
+                {(data.knowledgeCore?.categories ?? []).slice(0, 4).map((category) => (
+                  <div key={category.category}><p><strong>{category.category}</strong><b>{category.coveragePercent ?? 0}%</b></p><i><em style={{ width: `${category.coveragePercent ?? 0}%` }} /></i></div>
+                ))}
               </div>
+            </div>
+          </section>
+          <section className="opsPanel" aria-labelledby="ops-services-title">
+            <header><div><h2 id="ops-services-title">Service health</h2><p>Status reported by the backend</p></div><button type="button" onClick={() => handleNavAction('settings')}>Settings <ArrowRight size={15} aria-hidden="true" /></button></header>
+            {services.length ? <ul className="opsServices">{services.map((service) => (
+              <li key={service.name}><button type="button" onClick={() => openModal(service.name === 'LLM Gateway' ? 'modelStatus' : 'environmentInfo')}>
+                <i className={`serviceDot ${statusClass(service.status)}`} /><strong>{service.name}</strong><span>{statusText(service.status)}</span><ArrowRight size={15} aria-hidden="true" />
+              </button></li>
+            ))}</ul> : <EmptyState text="Service health was not reported." />}
+          </section>
+        </div>
+        <section className="opsPanel opsActivity" aria-labelledby="ops-activity-title">
+          <header><div><h2 id="ops-activity-title">Recent AI activity</h2><p>Inspect recent answers and their grounding</p></div><button type="button" onClick={() => handleNavAction('ai')}>All activity <ArrowRight size={15} aria-hidden="true" /></button></header>
+          {overviewActivity.logs.length ? <ul className="opsQueue">
+            {overviewActivity.logs.map((log) => (
+              <li key={log.id}><button type="button" onClick={() => openAiLogDetail(log)}>
+                <span className="opsQueueIcon"><Bot size={17} aria-hidden="true" /></span><span><strong>{log.question}</strong><small>{answerRouteLabel(log)} · {formatDateTime(log.createdTime)}</small></span><ArrowRight size={15} aria-hidden="true" />
+              </button></li>
             ))}
-          </div>
-        </article>
-
-        <article className="insightPanel">
-          <div className="insightHeader">
-            <span>Action Required</span>
-            <button type="button" onClick={openNotifications}>View all</button>
-          </div>
-          <div className="attentionList">
-            <button type="button" onClick={openWebEvidencePage}><strong>{data.externalEvidence?.summary?.pendingReview ?? 0}</strong><span>Pending web evidence reviews</span><ChevronDown size={15} /></button>
-            {(data.knowledgeGapLoop?.gaps ?? []).slice(0, 2).map((gap) => (
-              <button type="button" key={gap.logId} onClick={async () => { setActivePage('gaps'); await loadKnowledgeGaps(1); }}>
-                <strong>{gap.priority}</strong>
-                <span>{gap.question}</span>
-                <ChevronDown size={15} />
-              </button>
-            ))}
-            {(data.ticketEscalation?.tickets ?? []).slice(0, 2).map((ticket) => (
-              <button type="button" key={ticket.ticketId} onClick={async () => { setActivePage('tickets'); await loadTickets(); }}>
-                <strong>{ticket.priority}</strong>
-                <span>{ticket.title}</span>
-                <ChevronDown size={15} />
-              </button>
-            ))}
-            {!(data.knowledgeGapLoop?.gaps ?? []).length && !(data.ticketEscalation?.tickets ?? []).length && <EmptyState text="No urgent work items." />}
-          </div>
-        </article>
-
-      </section>
-
-      <section className="dashboardActivityPanel">
-        <div className="insightHeader"><span>Recent AI Activity</span><button type="button" onClick={() => handleNavAction('ai')}>View all</button></div>
-        {pagedAiLogs.length ? <div className="activityTable"><div className="activityTableHead"><span>Question</span><span>Answer mode</span><span>Status</span><span>Confidence</span><span>Time</span></div>{pagedAiLogs.slice(0, 5).map((log) => <button type="button" key={log.id} onClick={() => openAiLogDetail(log)}><span>{log.question}</span><b>{statusText(log.answerMode || log.sourceType)}</b><i className="statusPill success">Success</i><span>{log.confidence ?? '—'}</span><small>{formatDateTime(log.createdTime)}</small></button>)}</div> : <EmptyState text="No AI activity has been recorded yet." />}
-      </section>
-    </>
-  );
-
+          </ul> : <EmptyState text={overviewActivity.status === 'loading' ? 'Loading recent activity…' : overviewActivity.status === 'error' ? 'Recent activity is unavailable. Refresh to try again.' : 'No AI activity has been recorded yet.'} />}
+        </section>
+      </>
+    );
+  };
   const renderDetailState = (resourceLabel) => (
     <section className="adminPageSurface detailPageSurface">
       <div className="detailState">
@@ -2896,7 +2861,7 @@ Prevention controls:
             </div>
             <div className="formButtonRow">
               <button className="adminSubmitButton" type="button" onClick={() => copyToClipboard(selectedAiLog.answer, 'AI answer copied.')}>Copy Answer</button>
-              {selectedAiLog.sourceType === 'NONE' && <button className="secondaryAdminButton" type="button" onClick={async () => { closeModal(); setActivePage('gaps'); await loadKnowledgeGaps(1); }}>Open Knowledge Gaps</button>}
+              {selectedAiLog.sourceType === 'NONE' && <button className="secondaryAdminButton" type="button" onClick={async () => { handleNavAction('gaps'); }}>Open Knowledge Gaps</button>}
               {selectedAiLog.sourceType === 'WEB' && <button className="secondaryAdminButton" type="button" onClick={openWebEvidencePage}>Open Web Evidence</button>}
               <button className="danger" type="button" onClick={() => deleteSelectedAiLog(selectedAiLog)}>Delete Log</button>
             </div>
@@ -3212,7 +3177,7 @@ Prevention controls:
               <section>
                 <h3>File Insights</h3>
                 {unreadDocumentCandidateRows.length ? unreadDocumentCandidateRows.map((item) => (
-                  <button type="button" key={item.id} onClick={() => { setSelectedDocumentCandidate(item); setActivePage('documentLearning'); closeModal(); }}>
+                  <button type="button" key={item.id} onClick={() => { setSelectedDocumentCandidate(item); setReviewQueueTab('files'); handleNavAction('documentLearning'); }}>
                     <strong>{item.title}</strong>
                     <span>{item.category || 'General'} · {statusText(item.status)}</span>
                   </button>
@@ -3239,7 +3204,7 @@ Prevention controls:
               <section>
                 <h3>Web Evidence</h3>
                 {unreadEvidenceRows.length ? unreadEvidenceRows.map((item) => (
-                  <button type="button" key={item.id} onClick={() => { setSelectedEvidence(item); setActivePage('webEvidence'); closeModal(); }}>
+                  <button type="button" key={item.id} onClick={() => { setSelectedEvidence(item); handleNavAction('webEvidence'); }}>
                     <strong>{item.title || item.question}</strong>
                     <span>{item.domain || 'Unknown domain'} · {statusText(item.status)}</span>
                   </button>
@@ -3364,58 +3329,43 @@ Prevention controls:
     return null;
   };
 
+  const navPage = sectionParent[activePage] || activePage;
+  const currentGroup = adminNavigation.find(({ items }) => items.some(({ id }) => id === navPage));
+  const [pageTitle, pageDescription] = pageHeadings[activePage] || pageHeadings.command;
   return (
     <div className={`adminShell ${sidebarCollapsed ? 'sidebarCollapsed' : ''}`}>
       {renderModal()}
       {mobileSidebarOpen && <button className="mobileSidebarScrim" type="button" aria-label="Close navigation" onClick={() => setMobileSidebarOpen(false)} />}
       <aside className={`adminSidebar ${mobileSidebarOpen ? 'mobileOpen' : ''}`}>
         <div className="adminLogo">
-          <Cloud size={38} />
-          <div>
-            <strong>CloudOps</strong>
-            <span>CloudOps AI Knowledge Platform</span>
-          </div>
+          <CloudOpsMark />
+          <div><strong>CloudOps</strong><span>Admin console</span></div>
         </div>
-        <nav className="adminNav">
-          <span className="navGroupLabel">Overview</span>
-          {[["command", "Dashboard", Home], ["assistant", "AI Assistant", Bot]].map(([id, label, Icon]) => (
-            <button className={activePage === id ? 'active' : ''} type="button" key={id} title={sidebarCollapsed ? label : undefined} aria-current={activePage === id ? 'page' : undefined} onClick={() => handleNavAction(id)}><Icon size={18} /><span>{label}</span></button>
+        <nav className="adminNav" aria-label="Admin navigation">
+          {adminNavigation.map(({ label, items }) => (
+            <div className="opsNavGroup" key={label}>
+              <span className="navGroupLabel">{label}</span>
+              {items.map(({ id, label: itemLabel, icon: Icon }) => (
+                <button className={navPage === id ? 'active' : ''} type="button" key={id} title={itemLabel} aria-label={itemLabel} aria-current={navPage === id ? (activePage === id ? 'page' : 'location') : undefined} onClick={() => handleNavAction(id)}>
+                  <Icon size={18} aria-hidden="true" /><span>{itemLabel}</span>
+                </button>
+              ))}
+            </div>
           ))}
-          <button className="navGroupToggle" type="button" onClick={() => setKnowledgeNavOpen((value) => !value)}><BookOpen size={18} /><span>Knowledge</span><ChevronDown size={14} className={knowledgeNavOpen ? '' : 'collapsed'} /></button>
-          {knowledgeNavOpen && <div className="navSubgroup">
-            {[["knowledge", "Knowledge Packs", BookOpen], ["documents", "Documents", FileText], ["documentLearning", "Review & Approvals", Target], ["webEvidence", "Web Evidence", Globe2], ["gaps", "Knowledge Gaps", AlertTriangle]].map(([id, label, Icon]) => (
-              <button className={activePage === id ? 'active' : ''} type="button" key={id} title={sidebarCollapsed ? label : undefined} aria-current={activePage === id ? 'page' : undefined} onClick={() => handleNavAction(id)}><Icon size={15} /><span>{label}</span></button>
-            ))}
-          </div>}
-          <span className="navGroupLabel">Operations</span>
-          {[["ai", "AI Activity", Bot], ["tickets", "Support Tickets", GitBranch]].map(([id, label, Icon]) => (
-            <button className={activePage === id ? 'active' : ''} type="button" key={id} title={sidebarCollapsed ? label : undefined} aria-current={activePage === id ? 'page' : undefined} onClick={() => handleNavAction(id)}><Icon size={18} /><span>{label}</span></button>
-          ))}
-          <span className="navGroupLabel">Administration</span>
-          <button className={`navGroupToggle ${['settings', 'users'].includes(activePage) ? 'activeParent' : ''}`} type="button" onClick={() => { navigateAdmin('/admin/settings'); setSettingsNavOpen(true); }}><Settings size={18} /><span>Settings</span><ChevronDown size={14} className={settingsNavOpen ? '' : 'collapsed'} /></button>
-          {settingsNavOpen && <div className="navSubgroup">
-            {[["users", "User Management", UsersRound]].map(([id, label, Icon]) => (
-              <button className={activePage === id ? 'active' : ''} type="button" key={id} title={sidebarCollapsed ? label : undefined} aria-current={activePage === id ? 'page' : undefined} onClick={() => handleNavAction(id)}><Icon size={15} /><span>{label}</span></button>
-            ))}
-          </div>}
         </nav>
         <button className="lastUpdated" type="button" onClick={loadOperationsCenter}>
           <span>System status</span>
           <strong>{loadState === 'live' ? ((data.serviceHealth ?? []).length && (data.serviceHealth ?? []).every((service) => ['HEALTHY', 'ACTIVE'].includes(String(service.status).toUpperCase())) ? 'All systems healthy' : 'Attention required') : loadState === 'loading' ? 'Checking services…' : 'Backend unavailable'}</strong>
           <RefreshCw size={16} />
         </button>
-        <button className="collapseButton" type="button" onClick={() => setSidebarCollapsed((value) => !value)}><PanelLeftClose size={18} />Collapse</button>
+        <button className="collapseButton" type="button" aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'} onClick={() => setSidebarCollapsed((value) => !value)}><PanelLeftClose size={18} aria-hidden="true" /><span>{sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}</span></button>
       </aside>
 
       <main className="adminMain">
         <header className="adminTopSection">
           <div className="adminTopbar">
-            <button className="mobileMenuButton" type="button" aria-label="Open navigation" onClick={() => setMobileSidebarOpen(true)}><Menu size={20} /></button>
-            <div className="adminTitleBlock">
-              <span className="adminEyebrow">CloudOps Operations</span>
-              <h1>{pageHeadings[activePage]?.[0] ?? 'Dashboard'}</h1>
-              <p>{pageHeadings[activePage]?.[1] ?? 'System overview and key operational metrics'}</p>
-            </div>
+            <button className="mobileMenuButton" type="button" aria-label="Open navigation" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)}><Menu size={20} /></button>
+            <div className="opsLocation"><span>Admin console</span><b aria-hidden="true">/</b><strong>{currentGroup?.label || 'Operations'}</strong></div>
             <div className="topbarControls">
               <button className={`environmentPill ${statusClass(data.environment?.status)}`} type="button" onClick={() => openModal('environmentInfo')}>
                 <span />{data.environment?.name ?? 'Unknown'}<ChevronDown size={14} />
@@ -3425,7 +3375,7 @@ Prevention controls:
                 <button type="submit" aria-label="Search stored knowledge"><Search size={18} /></button>
                 <kbd>Ctrl K</kbd>
               </form>
-              <button className={`notificationButton ${unreadNotificationCount > 0 ? 'hasUnread' : ''}`} type="button" onClick={openNotifications}>
+              <button className={`notificationButton ${unreadNotificationCount > 0 ? 'hasUnread' : ''}`} type="button" aria-label="Notifications" onClick={openNotifications}>
                 <Bell size={19} />
                 {unreadNotificationCount > 0 && <i>{unreadNotificationCount}</i>}
               </button>
@@ -3437,28 +3387,20 @@ Prevention controls:
             </div>
           </div>
 
-          <div className="serviceHealthBar" aria-label="Service health">
-            {(data.serviceHealth ?? []).map((service) => (
-              <button className={statusClass(service.status)} type="button" key={service.name} onClick={() => service.name === 'LLM Gateway' ? openModal('modelStatus') : openModal('environmentInfo')}>
-                <span />
-                <strong>{service.name}</strong>
-                <b>{statusText(service.status)}</b>
-              </button>
-            ))}
-          </div>
         </header>
 
-        {loadState === 'fallback' && (
-          <div className="adminBanner">Backend data is unavailable. Showing empty structure only; no data is fabricated.</div>
+        <div className="opsPageHeading">
+          <div><h1>{pageTitle}</h1><p>{pageDescription}</p></div>
+          {activePage === 'command' && <div className="opsHeadingActions">
+            <button type="button" onClick={() => { loadOperationsCenter(); loadOverviewActivity(); }} disabled={loadState === 'loading'}><RefreshCw size={16} aria-hidden="true" />Refresh</button>
+            <button type="button" className="opsHeadingPrimary" onClick={() => handleNavAction('assistant')}><Bot size={17} aria-hidden="true" />Open AI assistant</button>
+          </div>}
+        </div>
+        {loadState === 'fallback' && activePage !== 'command' && (
+          <div className="adminBanner" role="status">Operations data is unavailable. Check the backend connection and refresh system status.</div>
         )}
-
         {renderActivePage()}
-
-        <footer className="adminFooter">
-          <span>i</span>
-          <p><b>Tip:</b> {data.adminTip}</p>
-          <button type="button" onClick={() => openModal('documentationUnavailable')}>System Documentation</button>
-        </footer>
+        <footer className="opsFooter"><button type="button" onClick={() => openModal('documentationUnavailable')}>System documentation</button></footer>
       </main>
     </div>
   );
